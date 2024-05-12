@@ -1,0 +1,80 @@
+Add Authentication tag on Appsettings
+
+"Authentication": {
+"ApiKey": "RR~F2772AC6EC37472BAA9130BAF12B5190"
+}
+
+-> Create constants class for Header and Header value
+
+public class AuthConstants
+{
+	public const string ApiKey = "Authentication:ApiKey";
+	public const string ApiKeyHeader = "X-Api-Key";
+}
+
+1.Create MiddleWare Folder -> Create "ApiKeyMiddleware" class
+   
+public class ApiKeyMiddleware
+{
+	private readonly RequestDelegate _next;
+	private readonly IConfiguration _configuration;
+
+	public ApiKeyMiddleware(RequestDelegate next, IConfiguration configuration)
+	{
+		_next = next;
+		_configuration = configuration;
+	}
+	public async Task InvokeAsync(HttpContext context)
+	{
+		if (!context.Request.Headers.TryGetValue(AuthConstants.ApiKeyHeader, out
+				var extractedApiKey))
+		{
+			context.Response.StatusCode = 401;
+			await context.Response.WriteAsync("Api Key was not provided ");
+			return;
+		}
+		var apiKey = _configuration.GetValue<string>(AuthConstants.ApiKey);
+		if (!apiKey.Equals(extractedApiKey))
+		{
+			context.Response.StatusCode = 401;
+			await context.Response.WriteAsync("Unauthorized client");
+			return;
+		}
+		await _next(context);
+	}
+}
+
+2.Add Swagger UI Auth and Inject AuthFiler
+
+ ->Program.cs (Change builder.Services.AddSwaggerGen())
+
+builder.Services.AddSwaggerGen(c =>   //Swagger Auth option
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Api Key Auth", Version = "v1" });
+    c.AddSecurityDefinition(AuthConstants.ApiKeyHeader, new OpenApiSecurityScheme
+    {
+        Description = "ApiKey must appear in header",
+        Type = SecuritySchemeType.ApiKey,
+        Name = AuthConstants.ApiKeyHeader,
+        In = ParameterLocation.Header,
+        Scheme = "ApiKeyScheme"
+    });
+    var key = new OpenApiSecurityScheme()
+    {
+        Reference = new OpenApiReference
+        {
+            Type = ReferenceType.SecurityScheme,
+            Id = AuthConstants.ApiKeyHeader
+        },
+        In = ParameterLocation.Header
+    };
+    var requirement = new OpenApiSecurityRequirement
+                    {
+                             { key, new List<string>() }
+                    };
+    c.AddSecurityRequirement(requirement);
+});
+
+app.UseMiddleware<ApiKeyMiddleware>();  //Add before Authorization tag
+
+MiddleWare will apply to all controllers

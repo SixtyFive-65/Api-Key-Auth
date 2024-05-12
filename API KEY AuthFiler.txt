@@ -1,0 +1,106 @@
+-Add Authentication tag on Appsettings
+
+"Authentication": {
+"ApiKey": "RR~F2772AC6EC37472BAA9130BAF12B5190"
+}
+
+
+-> Create constants class for Header and Header value
+
+public class AuthConstants
+{
+	public const string ApiKey = "Authentication:ApiKey";
+	public const string ApiKeyHeader = "X-Api-Key";
+}
+
+1.Create MiddleWare Folder -> Create "ApiKeyAuthFilter" class
+   
+
+public class ApiKeyAuthFilter : IAuthorizationFilter
+{
+	private readonly IConfiguration _configuration;
+
+	public ApiKeyAuthFilter( IConfiguration configuration)
+	{
+		_configuration = configuration;
+	}
+
+	public void OnAuthorization(AuthorizationFilterContext context)
+	{
+		if (!context.HttpContext.Request.Headers.TryGetValue(AuthConstants.ApiKeyHeader, out
+	 var extractedApiKey))
+		{
+			 context.Result = new UnauthorizedObjectResult("API Key missing");
+			return;
+		}
+		var apiKey = _configuration.GetValue<string>(AuthConstants.ApiKey);
+		if (!apiKey.Equals(extractedApiKey))
+		{
+			context.Result = new UnauthorizedObjectResult("API Key missing");
+			return;
+		}
+	}
+}
+
+2.Add Swagger UI Auth and Inject AuthFiler
+
+ ->Program.cs (Change builder.Services.AddSwaggerGen())
+
+builder.Services.AddSwaggerGen(c =>  //Swagger Auth option
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Api Key Auth", Version = "v1" });
+    c.AddSecurityDefinition(AuthConstants.ApiKeyHeader, new OpenApiSecurityScheme
+    {
+        Description = "ApiKey must appear in header",
+        Type = SecuritySchemeType.ApiKey,
+        Name = AuthConstants.ApiKeyHeader,
+        In = ParameterLocation.Header,
+        Scheme = "ApiKeyScheme"
+    });
+    var key = new OpenApiSecurityScheme()
+    {
+        Reference = new OpenApiReference
+        {
+            Type = ReferenceType.SecurityScheme,
+            Id = AuthConstants.ApiKeyHeader
+        },
+        In = ParameterLocation.Header
+    };
+    var requirement = new OpenApiSecurityRequirement
+                    {
+                             { key, new List<string>() }
+                    };
+    c.AddSecurityRequirement(requirement);
+});
+
+builder.Services.AddScoped<ApiKeyAuthFilter>();
+
+3. Apply filter to controllers 
+
+[Route("api/[controller]")]
+[ApiController]
+[ServiceFilter(typeof(ApiKeyAuthFilter))]
+public class RuleValidationController : ControllerBase
+{
+	[HttpGet]
+	public async Task<IActionResult> GetWithdrawalTransactionRules()
+	{
+		return Ok();
+	}
+
+	[HttpPost]
+	public async Task<IActionResult> ApproveRules()
+	{
+		return Ok();
+	}
+}
+
+Or Per Controller action
+
+[HttpPost]
+[ServiceFilter(typeof(ApiKeyAuthFilter))]
+
+public async Task<IActionResult> ApproveRules()
+{
+	return Ok();
+}
